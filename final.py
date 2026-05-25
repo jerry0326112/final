@@ -1,7 +1,7 @@
 import requests
 from pymongo import MongoClient
 import datetime
-import os  # 新增這行
+import os  
 
 # 讓程式去系統的「環境變數」裡面找密碼，找不到就報錯
 MONGO_URI = os.getenv("MONGO_URI")
@@ -50,7 +50,7 @@ try:
                 }
                 flight_data_list.append(flight_info) # 把這架飛機塞進列表裡
                 
-                # 同時印在終端機讓你確認
+                
                 print(f"✈️ 呼號: {flight_info['callsign']:8} | 高度: {flight_info['altitude']}m | 速度: {flight_info['velocity']}m/s")
             
             print("-" * 50)
