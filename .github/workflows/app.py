@@ -34,10 +34,10 @@ if not df.empty:
     st.subheader("📊 原始資料預覽")
     st.dataframe(df)
 
-    st.subheader("📈 航班高度分佈統計")
-    df["altitude"] = pd.to_numeric(df["altitude"], errors="coerce")
-    chart_data = df.dropna(subset=["altitude"])
-    st.bar_chart(chart_data, y="altitude")
+    st.subheader("🏢 航空公司航班數量統計")
+    df["airline"] = df["callsign"].astype(str).str[:3]
+    airline_counts = df["airline"].value_counts()
+    st.bar_chart(airline_counts)
 
 else:
     st.warning("目前資料庫還沒有資料喔！等 GitHub 機器人跑完再重整網頁看看。")
