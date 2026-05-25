@@ -46,7 +46,7 @@ try:
                     "latitude": flight[6],
                     "altitude": flight[7],
                     "velocity": flight[9],
-                    "timestamp": datetime.datetime.now() # 記錄抓取的當下時間
+                    "timestamp": datetime.datetime.utcnow() + datetime.timedelta(hours=8)
                 }
                 flight_data_list.append(flight_info) # 把這架飛機塞進列表裡
                 
