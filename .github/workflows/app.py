@@ -150,7 +150,7 @@ if not df.empty:
         
         airline_counts = df["airline_name"].value_counts().reset_index()
         airline_counts.columns = ["航空公司名稱", "航班數量"]
-        st.bar_chart(airline_counts, x="航空公司名稱", "航班數量")
+        st.bar_chart(airline_counts, x="航空公司名稱", y="航班數量")
 
     with col_b:
         st.markdown("**⏳ 歷史空域流量趨勢**")
