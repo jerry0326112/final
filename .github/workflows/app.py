@@ -24,7 +24,7 @@ def get_data():
     return df
 
 # 🌟 換上更有故事性的標題
-st.title("✈️ 北台灣空域擁擠度")
+st.title("✈️ 北台灣空域監測站")
 
 df = get_data()
 
@@ -99,7 +99,7 @@ if not df.empty:
         layers=[layer],
         initial_view_state=view_state,
         tooltip={"text": "呼號: {callsign}\n高度: {altitude} m\n速度: {velocity} m/s"},
-        map_style="mapbox://styles/mapbox/dark-v10",
+        map_style="dark",  # 🌟 這裡已修改為不需要 API 金鑰的內建深色底圖
     )
     
     st.pydeck_chart(r)
