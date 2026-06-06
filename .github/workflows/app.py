@@ -1,7 +1,7 @@
 import pandas as pd
 from pymongo import MongoClient
 import streamlit as st
-import pydeck as pdk  # 🌟 導入 3D 與熱力圖套件
+import pydeck as pdk  
 
 MONGO_URI = st.secrets["MONGO_URI"]
 
@@ -13,7 +13,6 @@ client = init_connection()
 db = client["flight_tracker"]
 collection = db["taiwan_flights"]
 
-# 將快取時間縮短為 60 秒，讓即時性更高
 @st.cache_data(ttl=60)
 def get_data():
     items = list(collection.find({}, {"_id": 0}))
@@ -23,31 +22,26 @@ def get_data():
         df = df.sort_values(by="timestamp", ascending=False)
     return df
 
-# 🌟 頂部標題
 st.title("✈️ 北台灣空域監測站")
 
-# ==========================================
-# 🌟 創意一：手動強制更新按鈕
-# ==========================================
+# 手動強制更新按鈕
 if st.button("🔄 強制獲取最新衛星資料"):
-    st.cache_data.clear() # 清除 Streamlit 快取
-    st.rerun()            # 強制網頁重新整理
+    st.cache_data.clear() 
+    st.rerun()            
 
 df = get_data()
 
 if not df.empty:
-    # 資料預處理：確保高度和速度是數值，並把空值補 0
     df["altitude"] = pd.to_numeric(df["altitude"], errors="coerce").fillna(0)
     df["velocity"] = pd.to_numeric(df["velocity"], errors="coerce").fillna(0)
 
-    # 抓出「最新時間點」的一批飛機，用來計算即時 KPI 與畫當下 3D 柱狀體
     latest_time = df["timestamp"].max()
     latest_df = df[df["timestamp"] == latest_time].copy()
 
     st.write(f"目前資料庫總共累積了 **{len(df)}** 筆歷史軌跡，當下為 **{latest_time.strftime('%Y-%m-%d %H:%M:%S')}** 的空域快照！🎉")
 
     # ==========================================
-    # 即時空域指標面板 (st.metric)
+    # 即時空域指標面板
     # ==========================================
     st.subheader("📊 即時空域指標")
     
@@ -66,21 +60,19 @@ if not df.empty:
     st.markdown("---")
 
     # ==========================================
-    # 🌟 創意二：3D 實時航班 + 歷史軌跡熱力圖（雙圖層）
+    # 3D 實時航班 + 歷史軌跡熱力圖
     # ==========================================
     st.subheader("📍 3D 即時航班與歷史航道熱力圖")
-    st.markdown("*(柱體：當下航班位置與高度 | 層霓虹光暈：歷史累積的「空中高速公路」熱區)*")
+    st.markdown("*(柱體：當下航班位置與高度 |底層霓虹光暈：歷史累積的「空中高速公路」熱區)*")
 
-    # 判斷當下航班的異常顏色邏輯
     def get_color(row):
         if row['altitude'] < 1500 or row['velocity'] < 50:
-            return [255, 75, 75, 220]  # 紅色 (起降中或低速異常)
+            return [255, 75, 75, 220]  
         else:
-            return [75, 255, 75, 220]  # 科技綠 (正常巡航)
+            return [75, 255, 75, 220]  
 
     latest_df['color'] = latest_df.apply(get_color, axis=1)
 
-    # 圖層 1：歷史大數據熱力圖層 (使用全部的 df)
     heatmap_layer = pdk.Layer(
         "HeatmapLayer",
         data=df,
@@ -90,7 +82,6 @@ if not df.empty:
         radius_pixels=25,
     )
 
-    # 圖層 2：當下航班的 3D 柱狀圖層 (使用最新時間的 latest_df)
     column_layer = pdk.Layer(
         "ColumnLayer",
         data=latest_df,
@@ -103,7 +94,6 @@ if not df.empty:
         auto_highlight=True,
     )
 
-    # 設定地圖視角 (傾斜 45 度展現立體感)
     view_state = pdk.ViewState(
         latitude=25.0,
         longitude=121.2,
@@ -112,7 +102,6 @@ if not df.empty:
         bearing=0,
     )
 
-    # 整合雙圖層渲染，並套用內建 dark 樣式
     r = pdk.Deck(
         layers=[heatmap_layer, column_layer],
         initial_view_state=view_state,
@@ -131,12 +120,11 @@ if not df.empty:
 
     col_a, col_b = st.columns(2)
     
-    # 🌟 創意三：航空公司「中文實名制」解碼排行
     with col_a:
-        st.markdown("**🏆 熱門航空公司排行**")
+        # 🌟 這裡修改為 Top 10，避免 X 軸太擠導致破圖
+        st.markdown("**🏆 熱門航空公司排行 (Top 10)**")
         df["airline"] = df["callsign"].str[:3]
         
-        # 航空公司 ICAO 代碼映射字典
         airline_mapping = {
             "EVA": "長榮航空 (EVA)", "CAL": "中華航空 (CAL)", 
             "SJX": "星宇航空 (SJX)", "MDA": "華信航空 (MDA)", 
@@ -145,17 +133,24 @@ if not df.empty:
             "ANA": "全日空 (ANA)", "THY": "土耳其航空 (THY)",
             "CSC": "四川航空 (CSC)", "CES": "東方航空 (CES)"
         }
-        # 轉換名稱，若不在字典內則顯示原本代號並註記其他
         df["airline_name"] = df["airline"].map(airline_mapping).fillna(df["airline"] + " (其他)")
         
-        airline_counts = df["airline_name"].value_counts().reset_index()
-        airline_counts.columns = ["航空公司名稱", "航班數量"]
-        st.bar_chart(airline_counts, x="航空公司名稱", y="航班數量")
+        # 🌟 關鍵修正：只取前 10 名，並且直接將 Series 丟給 bar_chart，它就會乖乖照大小排好
+        airline_counts = df["airline_name"].value_counts().head(10)
+        st.bar_chart(airline_counts)
 
     with col_b:
         st.markdown("**⏳ 歷史空域流量趨勢**")
         traffic_trend = df.groupby("timestamp").size().reset_index(name="當下航班數")
         st.line_chart(traffic_trend, x="timestamp", y="當下航班數")
+
+    # 🌟 新增：每日空域尖峰/離峰時段分析
+    st.markdown("**⏰ 每日空域尖峰/離峰時段分析**")
+    df["hour"] = df["timestamp"].dt.hour
+    hourly_traffic = df.groupby("hour").size().reset_index(name="累計架次")
+    # 將數字小時轉換為 00:00 的字串格式，讓 X 軸更美觀
+    hourly_traffic["時段"] = hourly_traffic["hour"].astype(str).str.zfill(2) + ":00"
+    st.bar_chart(hourly_traffic, x="時段", y="累計架次")
 
     st.markdown("**🚀 飛行速度與高度關係分析**")
     scatter_data = df.dropna(subset=["altitude", "velocity"])
