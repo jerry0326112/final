@@ -148,8 +148,20 @@ if not df.empty:
     st.markdown("**⏰ 每日空域尖峰/離峰時段分析**")
     df["hour"] = df["timestamp"].dt.hour
     hourly_traffic = df.groupby("hour").size().reset_index(name="累計架次")
+    
+    # ==========================================
+    # 🌟 關鍵修正：確保 X 軸顯示完整的 24 小時（沒資料的補 0）
+    # ==========================================
+    # 1. 建立一個包含 0 到 23 小時的完整資料表
+    all_hours = pd.DataFrame({"hour": range(24)})
+    
+    # 2. 把完整的 24 小時跟我們抓到的資料「合併 (merge)」，找不到資料的格子就填上 0 (fillna)
+    hourly_traffic = pd.merge(all_hours, hourly_traffic, on="hour", how="left").fillna(0)
+    
     # 將數字小時轉換為 00:00 的字串格式，讓 X 軸更美觀
-    hourly_traffic["時段"] = hourly_traffic["hour"].astype(str).str.zfill(2) + ":00"
+    hourly_traffic["時段"] = hourly_traffic["hour"].astype(int).astype(str).str.zfill(2) + ":00"
+    
+    # 畫圖
     st.bar_chart(hourly_traffic, x="時段", y="累計架次")
 
     st.markdown("**🚀 飛行速度與高度關係分析**")
