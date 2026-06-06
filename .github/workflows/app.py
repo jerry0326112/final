@@ -168,8 +168,13 @@ if not df.empty:
     scatter_data = df.dropna(subset=["altitude", "velocity"])
     st.scatter_chart(scatter_data, x="velocity", y="altitude")
 
-    st.subheader("📋 原始資料預覽 (最新 10 筆)")
-    st.dataframe(df.head(10))
+    st.subheader("📋 原始資料預覽")
+    st.markdown("*(預設展示最新 10 筆快照)*")
+    st.dataframe(df.head(10)) # 畫面上只佔一點點空間
+
+    # 建立可以點開的摺疊區塊
+    with st.expander("🔍 點擊展開查看完整原始資料 (包含資料庫所有歷史紀錄)"):
+        st.dataframe(df) # 點開後會在這裡顯示整張資料表
 
 else:
     st.warning("目前資料庫還沒有資料喔！等 GitHub 機器人跑完再重整網頁看看。")
