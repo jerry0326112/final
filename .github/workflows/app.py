@@ -24,7 +24,7 @@ def get_data():
     return df
 
 # 🌟 換上更有故事性的標題
-st.title("✈️ 北台灣空域擁擠度與戰情監測站")
+st.title("✈️ 北台灣空域擁擠度")
 
 df = get_data()
 
@@ -42,7 +42,7 @@ if not df.empty:
     # ==========================================
     # 🌟 升級功能一：戰情室 KPI 儀表板
     # ==========================================
-    st.subheader("📊 即時空域戰情指標")
+    st.subheader("📊 即時空域指標")
     
     current_flights = len(latest_df)
     avg_velocity = round(latest_df["velocity"].mean(), 1) if not latest_df.empty else 0
