@@ -1,84 +1,68 @@
-import os
-import random
-import datetime
+import requests
 from pymongo import MongoClient
+import datetime
+import os  
 
-# 1. 檢查環境變數
+# 讓程式去系統的「環境變數」裡面找密碼，找不到就報錯
 MONGO_URI = os.getenv("MONGO_URI")
+
 if not MONGO_URI:
-    raise ValueError("找不到 MONGO_URI，請檢查 GitHub Secrets 設定！")
+    raise ValueError("找不到 MONGO_URI，請檢查環境變數設定！")
 
 # 2. 連線到 MongoDB
 client = MongoClient(MONGO_URI)
-db = client["flight_tracker"]
-collection = db["price_trends"] # 對齊前端指定的集合名稱
+db = client["flight_tracker"]       # 建立/選擇名為 flight_tracker 的資料庫
+collection = db["taiwan_flights"]   # 建立/選擇名為 taiwan_flights 的資料表
 
-print("📡 正在啟動跨國航線機票價格動態計算管線...\n")
+# 3. 設定北台灣的 Bounding Box (經緯度範圍)
+lamin = 24.5  # 最小緯度
+lamax = 25.5  # 最大緯度
+lomin = 120.5 # 最小經度
+lomax = 122.0 # 最大經度
 
-# 3. 定義基礎航線與地理資訊（桃園 TPE -> 首爾 ICN / 釜山 PUS）
-routes_info = {
-    "TPE -> ICN": {
-        "from_lat": 25.0797, "from_lng": 121.2342,
-        "to_lat": 37.4602, "to_lng": 126.4407,
-        "flights": [
-            {"flight_no": "BR170", "airline": "長榮航空", "base_price": 11500},
-            {"flight_no": "CI160", "airline": "中華航空", "base_price": 11000},
-            {"flight_no": "ZE822", "airline": "易斯達航空(LCC)", "base_price": 7000}
-        ]
-    },
-    "TPE -> PUS": {
-        "from_lat": 25.0797, "from_lng": 121.2342,
-        "to_lat": 35.1795, "to_lng": 128.9382,
-        "flights": [
-            {"flight_no": "JX711", "airline": "星宇航空", "base_price": 12500},
-            {"flight_no": "BX794", "airline": "釜山航空(LCC)", "base_price": 7500}
-        ]
-    }
-}
+# 組合 API 請求網址
+url = f"https://opensky-network.org/api/states/all?lamin={lamin}&lomin={lomin}&lamax={lamax}&lomax={lomax}"
 
-# 4. 資料特徵工程與動態票價邏輯 (Pipeline Core)
-current_time = datetime.datetime.utcnow() + datetime.timedelta(hours=8) # 轉台灣時間
-day_of_week = current_time.strftime("%A") # 獲取今天是星期幾
+print("📡 正在抓取北台灣上空的航班資料...\n")
 
-# 模擬未來某個週末出發的機票波動特徵
-# 💡 評分亮點：動態權重計算。週末出發機票加成 15%，並加上隨機市場供需波動
-weekday_multiplier = 1.15 if day_of_week in ["Friday", "Saturday", "Sunday"] else 1.00
-
-price_data_list = []
-
-for route, info in routes_info.items():
-    for flight in info["flights"]:
-        # 核心計算：基底價格 * 週末加成 + 隨機市場波動 (-500 ~ +1500 TWD)
-        market_flureflection = random.randint(-500, 1500)
-        final_price = int(flight["base_price"] * weekday_multiplier + market_flureflection)
-        
-        # 封裝成結構化 BSON/JSON 檔案
-        flight_price_doc = {
-            "flight_no": flight["flight_no"],
-            "airline": flight["airline"],
-            "route": route,
-            "from_lat": info["from_lat"],
-            "from_lng": info["from_lng"],
-            "to_lat": info["to_lat"],
-            "to_lng": info["to_lng"],
-            "price_twd": final_price,
-            "departure_day_of_week": day_of_week,
-            "timestamp": current_time
-        }
-        price_data_list.append(flight_price_doc)
-        
-        print(f"✈️ 航班: {flight_price_doc['flight_no']} ({flight_price_doc['airline']})")
-        print(f"   航線: {flight_price_doc['route']} | 今日動態監測票價: ${flight_price_doc['price_twd']} TWD")
-
-print("-" * 60)
-
-# 5. 將清洗與計算後的資料寫入雲端資料庫
 try:
-    if price_data_list:
-        collection.insert_many(price_data_list)
-        print(f"✅ [Data Pipeline 成功] 已成功將 {len(price_data_list)} 筆最新動態票價寫入 MongoDB 雲端！")
-        print(f"📅 數據時間戳記: {current_time.strftime('%Y-%m-%d %H:%M:%S')} (星期{day_of_week})")
+    response = requests.get(url)
+    
+    # 檢查是否成功取得回應
+    if response.status_code == 200:
+        data = response.json()
+        states = data.get('states') 
+
+        if states:
+            print(f"✅ 成功抓取！目前共有 {len(states)} 架飛機在該空域。\n")
+            
+            flight_data_list = [] # 準備一個空列表，用來裝所有飛機的資料
+            
+            for flight in states:
+                # 整理成 MongoDB 需要的「字典 (Dictionary)」格式
+                flight_info = {
+                    "callsign": flight[1].strip() if flight[1] else "無呼號",
+                    "longitude": flight[5],
+                    "latitude": flight[6],
+                    "altitude": flight[7],
+                    "velocity": flight[9],
+                    "timestamp": datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+                }
+                flight_data_list.append(flight_info) # 把這架飛機塞進列表裡
+                
+                
+                print(f"✈️ 呼號: {flight_info['callsign']:8} | 高度: {flight_info['altitude']}m | 速度: {flight_info['velocity']}m/s")
+            
+            print("-" * 50)
+            
+            # 4. 最重要的一步：把整個列表的飛機資料，一次寫入 MongoDB！
+            collection.insert_many(flight_data_list)
+            print("🎉 太棒了！所有資料已成功存入 MongoDB 雲端資料庫！")
+            
+        else:
+            print("⚠️ 目前該 Bounding Box 內沒有抓取到任何航班資料。")
     else:
-        print("⚠️ 沒有產生任何票價數據。")
+        print(f"❌ 抓取失敗，HTTP 狀態碼：{response.status_code}")
+
 except Exception as e:
-    print(f"❌ 寫入資料庫時發生錯誤：{e}")
+    print(f"發生錯誤：{e}")
