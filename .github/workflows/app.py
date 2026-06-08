@@ -38,7 +38,6 @@ def get_data():
 # =========================
 
 st.title("✈️ Flight BI Dashboard")
-st.caption("航空空域 BI 分析系統（Streamlit + MongoDB）")
 
 if st.button("🔄 Refresh Data"):
     st.cache_data.clear()
