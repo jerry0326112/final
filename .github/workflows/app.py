@@ -20,7 +20,6 @@ def get_flight_data():
     df = pd.DataFrame(items)
     if not df.empty and "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
-        # 篩選客機
         passenger_airlines = ["EVA", "CAL", "SJX", "MDA", "UIA", "TTW", "CPA", "JAL", "ANA", "THY", "CSC", "CES"]
         df["airline_code"] = df["callsign"].str[:3]
         df = df[df["airline_code"].isin(passenger_airlines)]
@@ -28,8 +27,10 @@ def get_flight_data():
 
 @st.cache_data(ttl=3600)
 def get_weather_data():
-    # 模擬 7 天天氣 (168 小時)
-    hours = pd.date_range(start=pd.Timestamp.now().floor('H') - pd.Timedelta(days=7), periods=168, freq='H')
+    # 🌟 修正：將 floor('H') 改為 floor('h')，這是新版 Pandas 的正確寫法
+    start_time = pd.Timestamp.now().floor('h') - pd.Timedelta(days=7)
+    hours = pd.date_range(start=start_time, periods=168, freq='h')
+    
     np.random.seed(42)
     precip = np.random.choice([0, 0, 0, 5, 10], size=168, p=[0.7, 0.1, 0.1, 0.05, 0.05])
     wind = np.random.normal(20, 5, size=168)
@@ -62,11 +63,10 @@ if not df.empty:
     # 關聯分析
     st.subheader("⛈️ 天氣對航班運量的衝擊分析")
     
-    # 將飛機時間捨去至整點，以利與天氣資料 Merge
-    df["hour_rounded"] = df["timestamp"].dt.floor("H")
+    # 使用 .dt.floor('h') 確保對齊
+    df["hour_rounded"] = df["timestamp"].dt.floor("h")
     hourly_flights = df.groupby("hour_rounded").size().reset_index(name="客機架次")
     
-    # 確保兩邊合併用的欄位型別一致
     merged_data = pd.merge(hourly_flights, weather_df, left_on="hour_rounded", right_on="time", how="inner")
     
     c1, c2 = st.columns(2)
