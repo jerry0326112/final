@@ -1,9 +1,10 @@
-name: Flight Tracker Data Pipeline
+name: Flight Price Tracker Pipeline
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:
+    # 改為每天台灣時間上午 08:00 自動執行一次 (UTC 00:00)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 保留這個！上課 Presentation 時可以在 GitHub 網頁上手動點擊執行給教授看
 
 jobs:
   run-etl:
@@ -23,8 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run ETL Script
+      - name: Run Flight Price ETL Script
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
-          OPENWEATHER_KEY: ${{ secrets.OPENWEATHER_KEY }}
         run: python final.py
