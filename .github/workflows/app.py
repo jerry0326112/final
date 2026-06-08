@@ -45,7 +45,7 @@ def calculate_distance(df, airport_lat, airport_lon):
     lon2, lat2 = np.radians(airport_lon), np.radians(airport_lat)
 
     dlon = lon2 - lon1
-    dlat = lat2 - dlat1
+    dlat = lat2 - lat1  # ✨ 已修正：將原本的 dlat1 改回 lat1
     a = (
         np.sin(dlat / 2) ** 2
         + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
@@ -318,4 +318,15 @@ if not df.empty:
         st.scatter_chart(scatter_data, x="velocity", y="altitude")
 
     # ==========================================
-    # 📋 原始
+    # 📋 原始資料預覽
+    # ==========================================
+    st.markdown("---")
+    st.subheader("📋 原始資料預覽")
+    st.markdown("*(預設展示最新 10 筆快照，已包含機場距離與歸類欄位)*")
+    st.dataframe(df.head(10))
+
+    with st.expander("🔍 點擊展開查看完整原始資料 (包含資料庫所有歷史紀錄)"):
+        st.dataframe(df)
+
+else:
+    st.warning("目前資料庫還沒有資料喔！等 GitHub 機器人跑完再重整網頁看看。")
