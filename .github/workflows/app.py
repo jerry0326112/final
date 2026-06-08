@@ -2,7 +2,7 @@ import pandas as pd
 from pymongo import MongoClient
 import streamlit as st
 import pydeck as pdk  
-import requests # 🌟 新增：用來呼叫天氣 API
+import numpy as np
 
 MONGO_URI = st.secrets["MONGO_URI"]
 
@@ -20,35 +20,26 @@ def get_flight_data():
     df = pd.DataFrame(items)
     if not df.empty and "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df = df.sort_values(by="timestamp", ascending=False)
-        
-        # 🌟 核心過濾：只保留「知名客運航空公司」，剔除私人飛機或小飛機
+        # 篩選客機
         passenger_airlines = ["EVA", "CAL", "SJX", "MDA", "UIA", "TTW", "CPA", "JAL", "ANA", "THY", "CSC", "CES"]
         df["airline_code"] = df["callsign"].str[:3]
-        df = df[df["airline_code"].isin(passenger_airlines)] # 只篩選客機
+        df = df[df["airline_code"].isin(passenger_airlines)]
     return df
 
 @st.cache_data(ttl=3600)
 def get_weather_data():
-    hours = pd.date_range(start=pd.Timestamp.now() - pd.Timedelta(days=7), periods=168, freq='H')
-    
-    import numpy as np
-    np.random.seed(42) 
+    # 模擬 7 天天氣 (168 小時)
+    hours = pd.date_range(start=pd.Timestamp.now().floor('H') - pd.Timedelta(days=7), periods=168, freq='H')
+    np.random.seed(42)
     precip = np.random.choice([0, 0, 0, 5, 10], size=168, p=[0.7, 0.1, 0.1, 0.05, 0.05])
     wind = np.random.normal(20, 5, size=168)
-    
-    return pd.DataFrame({
-        "time": hours,
-        "precipitation_mm": precip,
-        "wind_speed_kmh": wind
-    })
+    return pd.DataFrame({"time": hours, "precipitation_mm": precip, "wind_speed_kmh": wind})
 
 st.title("✈️ 台灣出入境客機運量與氣候影響分析")
 
-# 手動強制更新按鈕
-if st.button("🔄 強制獲取最新衛星與氣象資料"):
-    st.cache_data.clear() 
-    st.rerun()            
+if st.button("🔄 強制獲取最新資料"):
+    st.cache_data.clear()
+    st.rerun()
 
 df = get_flight_data()
 weather_df = get_weather_data()
@@ -57,123 +48,49 @@ if not df.empty:
     df["altitude"] = pd.to_numeric(df["altitude"], errors="coerce").fillna(0)
     df["velocity"] = pd.to_numeric(df["velocity"], errors="coerce").fillna(0)
 
-    # 1. 計算平均每天客機量
-    df["date"] = df["timestamp"].dt.date
-    daily_traffic = df.groupby("date").size().reset_index(name="客機數量")
-    avg_daily_flights = int(daily_traffic["客機數量"].mean())
-
+    # 顯示指標
     latest_time = df["timestamp"].max()
     latest_df = df[df["timestamp"] == latest_time].copy()
-
-    st.write(f"目前資料庫共累積 **{len(df)}** 筆商業客機紀錄。透過關聯桃園機場氣象數據，分析天候對航班營運之衝擊。")
-
-    # ==========================================
-    # 商業營運指標面板
-    # ==========================================
-    st.subheader("📊 航班營運與氣象指標")
     
-    current_flights = len(latest_df)
-    
-    # 抓取最新的天氣狀況
-    current_weather = "晴朗/多雲"
-    if not weather_df.empty:
-        latest_weather = weather_df.iloc[-1]
-        if latest_weather["precipitation_mm"] > 0:
-            current_weather = f"降雨 ({latest_weather['precipitation_mm']}mm)"
-        
     col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(label="📅 平均每日客機運量", value=f"{avg_daily_flights} 架次")
-    with col2:
-        st.metric(label="🛰️ 當前監測客機數", value=f"{current_flights} 架次")
-    with col3:
-        st.metric(label="⛅ 桃園機場當前天候", value=current_weather)
+    col1.metric("當前監測客機數", f"{len(latest_df)} 架")
+    col2.metric("平均飛行速度", f"{round(latest_df['velocity'].mean(), 1)} m/s")
+    col3.metric("最高飛行海拔", f"{round(latest_df['altitude'].max(), 1)} m")
 
     st.markdown("---")
-
-    # ==========================================
-    # 大數據分析區：客機量與天氣的關聯
-    # ==========================================
+    
+    # 關聯分析
     st.subheader("⛈️ 天氣對航班運量的衝擊分析")
     
-    if not weather_df.empty:
-        # 將飛機資料轉換為「逐小時」統計
-        df["hour_rounded"] = df["timestamp"].dt.floor("H") # 把時間無條件捨去到整點
-        hourly_flights = df.groupby("hour_rounded").size().reset_index(name="客機架次")
-        
-        # 🌟 Data Wrangling 炫技：將航班資料與氣象資料透過「時間」進行合併 (Merge)
-        merged_data = pd.merge(hourly_flights, weather_df, left_on="hour_rounded", right_on="time", how="inner")
-        
-        col_w1, col_w2 = st.columns(2)
-        with col_w1:
-            st.markdown("**🌧️ 降雨量 vs 客機架次**")
-            st.markdown("*(分析降雨是否造成航班延誤或數量減少)*")
-            st.scatter_chart(merged_data, x="precipitation_mm", y="客機架次")
-            
-        with col_w2:
-            st.markdown("**💨 風速 vs 客機架次**")
-            st.markdown("*(分析強陣風對空域流量的影響)*")
-            st.scatter_chart(merged_data, x="wind_speed_kmh", y="客機架次")
-    else:
-        st.warning("目前無法取得氣象 API 資料。")
+    # 將飛機時間捨去至整點，以利與天氣資料 Merge
+    df["hour_rounded"] = df["timestamp"].dt.floor("H")
+    hourly_flights = df.groupby("hour_rounded").size().reset_index(name="客機架次")
+    
+    # 確保兩邊合併用的欄位型別一致
+    merged_data = pd.merge(hourly_flights, weather_df, left_on="hour_rounded", right_on="time", how="inner")
+    
+    c1, c2 = st.columns(2)
+    c1.scatter_chart(merged_data, x="precipitation_mm", y="客機架次")
+    c2.scatter_chart(merged_data, x="wind_speed_kmh", y="客機架次")
 
-    st.markdown("---")
-
-    # ==========================================
-    # 歷史趨勢與 3D 地圖
-    # ==========================================
-    st.subheader("📈 每日出入境客機運量趨勢")
-    st.bar_chart(daily_traffic, x="date", y="客機數量")
-
-    st.subheader("📍 3D 即時客機監測與歷史航道熱力圖")
-    def get_color(row):
-        if row['altitude'] < 1500 or row['velocity'] < 50:
-            return [255, 75, 75, 220]  # 起降階段
-        else:
-            return [75, 255, 75, 220]  # 巡航階段
-
-    latest_df['color'] = latest_df.apply(get_color, axis=1)
-
-    heatmap_layer = pdk.Layer(
-        "HeatmapLayer",
-        data=df,
-        get_position=["longitude", "latitude"],
-        opacity=0.4,
-        get_weight=1,
-        radius_pixels=25,
-    )
-
-    column_layer = pdk.Layer(
-        "ColumnLayer",
-        data=latest_df,
-        get_position=["longitude", "latitude"],
-        get_elevation="altitude",
-        elevation_scale=1.5,
-        radius=1500,
-        get_fill_color="color",
-        pickable=True,
-        auto_highlight=True,
-    )
-
-    view_state = pdk.ViewState(
-        latitude=25.0,
-        longitude=121.2,
-        zoom=7.5,
-        pitch=45,
-        bearing=0,
-    )
-
+    # 3D 地圖
+    st.subheader("📍 3D 即時客機監測")
+    latest_df['color'] = latest_df.apply(lambda row: [255, 75, 75, 220] if row['altitude'] < 1500 else [75, 255, 75, 220], axis=1)
+    
     r = pdk.Deck(
-        layers=[heatmap_layer, column_layer],
-        initial_view_state=view_state,
-        tooltip={"text": "呼號: {callsign}\n高度: {altitude} m\n速度: {velocity} m/s"},
-        map_style="dark", 
+        layers=[pdk.Layer("ColumnLayer", data=latest_df, get_position=["longitude", "latitude"], 
+                          get_elevation="altitude", elevation_scale=1.5, radius=1500, get_fill_color="color")],
+        initial_view_state=pdk.ViewState(latitude=25.0, longitude=121.2, zoom=7.5, pitch=45),
+        map_style="dark"
     )
     st.pydeck_chart(r)
 
-    # 建立可以點開的摺疊區塊
-    with st.expander("🔍 點擊展開查看完整原始資料 (包含資料庫所有歷史紀錄)"):
+    # 歷史統計
+    st.subheader("📈 運量趨勢")
+    daily_traffic = df.groupby(df["timestamp"].dt.date).size().reset_index(name="客機數量")
+    st.bar_chart(daily_traffic, x="timestamp", y="客機數量")
+    
+    with st.expander("🔍 查看完整原始資料"):
         st.dataframe(df)
-
 else:
-    st.warning("目前資料庫還沒有資料喔！等 GitHub 機器人跑完再重整網頁看看。")
+    st.warning("資料庫暫無資料。")
