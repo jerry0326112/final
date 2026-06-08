@@ -2,63 +2,146 @@ import pandas as pd
 from pymongo import MongoClient
 import streamlit as st
 import pydeck as pdk  
-import numpy as np
 
-# --- (連線設定維持不變) ---
 MONGO_URI = st.secrets["MONGO_URI"]
+
 @st.cache_resource
 def init_connection():
     return MongoClient(MONGO_URI)
+
 client = init_connection()
 db = client["flight_tracker"]
 collection = db["taiwan_flights"]
 
 @st.cache_data(ttl=60)
-def get_flight_data():
+def get_data():
     items = list(collection.find({}, {"_id": 0}))
     df = pd.DataFrame(items)
-    if not df.empty:
+    if not df.empty and "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values(by="timestamp", ascending=False)
     return df
 
-@st.cache_data(ttl=3600)
-def get_simulated_weather():
-    # 模擬氣象狀況
-    np.random.seed(42)
-    precip = np.random.choice([0, 5, 10], size=1, p=[0.8, 0.15, 0.05])[0] # 模擬當前降雨
-    wind = np.random.normal(15, 5) # 模擬當前風速
-    return {"precip": precip, "wind": wind}
+st.title("✈️ 北台灣空域監測站")
 
-# --- 介面開始 ---
-st.title("✈️ 旅客航空氣象指南")
-st.markdown("監測北台灣即時空域，提供您最可靠的出發建議。")
+if st.button("🔄 強制獲取最新衛星資料"):
+    st.cache_data.clear() 
+    st.rerun()            
 
-df = get_flight_data()
-weather = get_simulated_weather()
+df = get_data()
 
-# 🌟 新增：旅客出發建議邏輯
-st.subheader("💡 專家出發建議")
-if weather["precip"] > 5 or weather["wind"] > 30:
-    st.error(f"⚠️ 天候不佳：目前降雨量 {weather['precip']}mm，風速 {round(weather['wind'])} km/h。航班可能面臨延誤，請與航空公司確認。")
+# =====================================================
+# 📊 新增：總覽 Dashboard（你原本沒有，我幫你加）
+# =====================================================
+
+if not df.empty:
+
+    df["altitude"] = pd.to_numeric(df["altitude"], errors="coerce").fillna(0)
+    df["velocity"] = pd.to_numeric(df["velocity"], errors="coerce").fillna(0)
+
+    latest_time = df["timestamp"].max()
+    latest_df = df[df["timestamp"] == latest_time].copy()
+
+    st.subheader("📊 即時總覽 Dashboard")
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("✈️ 航班數", len(latest_df))
+    c2.metric("💨 平均速度", round(latest_df["velocity"].mean(), 1))
+    c3.metric("🏔️ 最高高度", round(latest_df["altitude"].max(), 1))
+    c4.metric("📦 總資料筆數", len(df))
+
+    st.markdown("---")
+
+    # =====================================================
+    # 📍 3D 地圖（保留你的）
+    # =====================================================
+
+    st.subheader("📍 3D 即時航班")
+
+    def get_color(row):
+        if row['altitude'] < 1500 or row['velocity'] < 50:
+            return [255, 75, 75, 220]
+        else:
+            return [75, 255, 75, 220]
+
+    latest_df['color'] = latest_df.apply(get_color, axis=1)
+
+    layer = pdk.Layer(
+        "ColumnLayer",
+        data=latest_df,
+        get_position=["longitude", "latitude"],
+        get_elevation="altitude",
+        elevation_scale=1.5,
+        radius=1500,
+        get_fill_color="color",
+        pickable=True
+    )
+
+    view_state = pdk.ViewState(
+        latitude=25.0,
+        longitude=121.2,
+        zoom=7,
+        pitch=45
+    )
+
+    deck = pdk.Deck(
+        layers=[layer],
+        initial_view_state=view_state,
+        map_style="dark",
+        tooltip={"text": "{callsign}\n{altitude} m\n{velocity} m/s"}
+    )
+
+    st.pydeck_chart(deck)
+
+    # =====================================================
+    # 📈 強化版數據視覺化（重點）
+    # =====================================================
+
+    st.subheader("📈 數據視覺化分析（升級版）")
+
+    tab1, tab2, tab3 = st.tabs(["航班流量", "航空公司", "高度分布"])
+
+    # -------------------------
+    # 📊 1. 流量趨勢（升級）
+    # -------------------------
+    with tab1:
+
+        traffic = df.groupby("timestamp").size().reset_index(name="flights")
+
+        st.line_chart(traffic, x="timestamp", y="flights")
+
+        st.bar_chart(traffic.tail(20).set_index("timestamp"))
+
+    # -------------------------
+    # ✈️ 2. 航空公司分布
+    # -------------------------
+    with tab2:
+
+        df["airline"] = df["callsign"].str[:3]
+        airline_counts = df["airline"].value_counts().head(10)
+
+        st.bar_chart(airline_counts)
+
+        st.write("Top 航空公司分布")
+        st.dataframe(airline_counts)
+
+    # -------------------------
+    # 🏔️ 3. 高度分布（新增）
+    # -------------------------
+    with tab3:
+
+        st.histogram_chart(df["altitude"])
+
+        st.scatter_chart(df, x="velocity", y="altitude")
+
+    # =====================================================
+    # 📋 原始資料
+    # =====================================================
+
+    st.subheader("📋 原始資料")
+
+    st.dataframe(df.head(15))
+
 else:
-    st.success("✅ 天候狀況良好：適合出發！目前空域飛行條件穩定。")
-
-# --- 視覺化圖表區 ---
-col1, col2 = st.columns(2)
-with col1:
-    st.metric("當前監測航班", f"{len(df[df['timestamp'] == df['timestamp'].max()])} 架")
-with col2:
-    st.metric("預估今日準點率參考", "95% (基於即時航況)")
-
-st.subheader("📍 航班 3D 監測")
-# (保留原本的 pydeck 地圖...)
-# ... [請保持你原本的 3D map code] ...
-
-st.subheader("📊 為什麼天氣影響旅遊指南？")
-st.markdown("""
-- **航班密度分析**：我們監測特定時段的航班密度，避開機場尖峰。
-- **氣候衝擊監控**：當降雨量增加時，航班數量往往產生波動。這對旅客來說是**延誤風險指數**。
-""")
-
-# 歷史趨勢圖 (保留原有的 bar_chart)
-# ... [請保留你原本的趨勢分析區塊] ...
+    st.warning("目前資料庫還沒有資料")
